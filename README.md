@@ -1,32 +1,45 @@
 # skill-model-deactivator
 
-Keeps a declared list of skills hidden from automatic model selection, and re-applies that
-list every time something else rewrites the skill files.
+Lets you keep many skills installed but allow only some of them to be invoked
+automatically. The rest stay available as explicit commands, and the tool re-applies that
+choice every time something rewrites the skill files.
 
 ## Why this exists
 
-Skill directories are not yours alone. Agent installers, plugin registries, and package
-update commands write into `~/.claude/skills`, `~/.pi/agent/skills`, and `~/.agents/skills`,
-and they re-sync those files on the next update.
+A skill does two jobs. You can call it yourself, as a slash command. And the model can pick
+it on its own, because every installed skill loads its name and description into the
+model's context on every turn and competes for the moment when the model decides which
+skill to reach for.
 
-Every installed skill loads its name and description into the model's context on every
-turn, and competes for the moment when the model decides which skill to reach for. Two
-problems follow.
+Those two jobs do not always belong together. You can want a skill at hand without wanting
+the model to reach for it:
 
-**1. Duplicates compete.** An auto-installed skill can cover the same ground as a better
-one you already have: a generic `kibana` next to a wrapper bound to your own instance, a
-second `gerrit` that talks to a different server, an upstream `skill-creator` next to a
-local skill that encodes the conventions that actually apply here. When two descriptions
-overlap, the choice becomes a coin flip. Disabling the loser removes the coin flip and
-frees the context.
+- **It is a tool you call deliberately.** A release checklist, a destructive cleanup, a
+  long research workflow: useful when you ask for it, a surprise when the model starts it
+  because a description happened to match.
+- **It overlaps another skill.** A generic skill next to one tailored to your own
+  environment, or two skills that cover the same ground in different ways. When two
+  descriptions overlap, the choice becomes a coin flip. Keeping only one of them
+  model-invocable removes the coin flip.
+- **The list is simply too long.** Each description costs context on every turn, and each
+  extra candidate makes the model's choice less precise. A short automatic set and a long
+  manual one gives you both coverage and focus.
 
-**2. The setting does not survive an update.** The runtime switch is a frontmatter line,
-`disable-model-invocation: true`. Write it by hand and the next sync, refresh, or package
-update can rewrite or replace the file and drop your edit. When the skill comes from a
-registry you cannot patch, there is nothing to fix upstream either.
+The runtime switch for this is a frontmatter line, `disable-model-invocation: true`. The
+skill stays installed and callable by name; the model just stops choosing it. Pi and Claude
+Code both honour it.
 
-So the problem is not "turn a skill off once". It is "keep a growing list of them off
-while the tools that own them keep changing them".
+**The setting does not survive an update.** Skill directories are not yours alone. Agent
+installers, plugin registries, and package update commands write into `~/.claude/skills`,
+`~/.pi/agent/skills`, and `~/.agents/skills`, and they re-sync those files on the next
+update. Write the line by hand and the next sync, refresh, or package update can rewrite or
+replace the file and drop your edit. When the skill comes from a registry you cannot patch,
+there is nothing to fix upstream either. Auto-installed skills are the sharpest case, but
+any skill you do not fully own has the same problem.
+
+So the problem is not "turn a skill off once". It is "decide which skills the model may pick
+on its own, and keep that decision in place while the tools that own the files keep
+changing them".
 
 ## What it does
 
