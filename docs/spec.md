@@ -653,9 +653,12 @@ running process, and no parse error can appear part-way through a run.
 `serve` exits `0` when it stops normally or when another instance already holds the lock, and
 `1` when the config cannot be read or cannot drive a pass: an empty `patterns` list, an
 unknown key, or a file that is not JSON all give one stderr line and exit `1`, for every form
-including `--once` and `--dry-run`. A refused run takes no lock and creates no state
-directory, so it leaves no log behind. A per-file write failure does not change the exit code:
-the daemon keeps running and reports it in the log (§10).
+including `--once` and `--dry-run`. A refused run takes no lock, because nothing is running. It
+writes one `ERROR` line with the reason to `<state dir>/smd.log`, creating the state directory
+and the log if they are missing: a failed bootstrap is the case where the reason matters most,
+and `smd log` is where a user looks for it. A log that stops at the last run of an older
+process reads as a tool that never started. A per-file write failure does not change the exit
+code: the daemon keeps running and reports it in the log (§10).
 
 ### 11.5 `smd log`
 
@@ -749,6 +752,10 @@ The config path is always ~/.skill-model-deactivator.json. There is no --config 
 - **Signals.** On SIGINT or SIGTERM the daemon stops watching, finishes the current file,
   releases the lock, and exits with code 0. On Windows it handles the
   console control events.
+- **Lifecycle lines.** One run writes, in order, `startup`, `reconcile started`,
+  `reconcile finished`, `serving`, then one pass per trigger or rescan, and `shutdown`. The
+  `serving` line marks the moment the watcher is live, and a run that refuses to start writes
+  one `ERROR` line with the reason before it exits 1 (§11.4, §13.2).
 
 ## 13. Logging
 
@@ -778,13 +785,19 @@ The level field is a label for the reader. The daemon always emits every level:
 
 | Level | Events |
 |---|---|
-| `info` | Startup with the resolved config path, log path, and watched roots. Every reconcile start and finish, with the file counts and the duration. Every write, with the path, the desired state, the reason, the action, and the result. Every shutdown. |
+| `info` | Startup with the resolved config path, log path, and watched roots. Every reconcile start and finish, with the file counts and the duration. Every write, with the path, the desired state, the reason, the action, and the result. `serving`, once the watcher is live. Every shutdown. |
 | `debug` | The decision for each file, including the ones that need no change. Each watcher event, with the path and the event kind. Debounce ticks. |
 | `warn` | A pattern that matches no file. A watch root that does not exist. A matched file without frontmatter, or with frontmatter that does not parse. A value outside both the truthy and the falsy sets. |
-| `error` | One line per failed write, with the path, the action the tool tried, and the operating-system error. A lost lock. A reconcile that stops on an unexpected error. Every failure is an `error` line and none is only a `warn`. |
+| `error` | One line per failed write, with the path, the action the tool tried, and the operating-system error. A lost lock. A reconcile that stops on an unexpected error. A run that refused to start, with the reason. Every failure is an `error` line and none is only a `warn`. |
 
 Every write is an `info` line with its own timestamp, so the history of one file can be
 recovered with `grep path=<file>`.
+
+The order of the lifecycle lines is the reading order of one run: `startup`, `reconcile
+started`, `reconcile finished`, `serving`, then one pass per trigger or rescan, and
+`shutdown`. A log that ends on `serving` is a daemon that is watching and has done no work
+since, so a daemon that writes nothing after it looks different from a daemon that never
+started.
 
 ### 13.3 Log destination
 
@@ -990,6 +1003,8 @@ Manual acceptance steps, one run per operating system.
 | A20 | With `2>/dev/null`, a full run still shows every log line, which proves nothing logs to stderr. With `1>/dev/null`, the file still receives every line. |
 | A21 | Make a matched `SKILL.md` read-only that already holds the desired state. `smd serve --once` reports nothing for it. Then change the config so it needs a patch. The run writes every other file, writes one `ERROR` line naming it, counts it in `failed=1`, and leaves its bytes untouched. |
 | A22 | Start `smd serve`, then delete one path from `patterns`. The daemon keeps the startup values, so that skill stays disabled. Restart it and the skill is no longer touched. |
+| A23 | `smd serve` writes one `serving` line after the startup pass and before the first pass that a trigger causes, so a log that ends on that line is a daemon that is watching and has done nothing since. |
+| A24 | With a broken config, `smd serve` exits 1 with one stderr line and writes one `ERROR` line carrying the reason to `<state dir>/smd.log`. On a home that never ran the daemon it creates the state directory and the log and exits 1, and it takes no lock. |
 
 ## 16. Milestones
 

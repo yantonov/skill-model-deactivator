@@ -47,10 +47,12 @@ func runServe(rest []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// The check sits before the lock and the logger, so a refused run creates no state
-	// directory.
+	// The check sits before the lock, so a refused run is never mistaken for a live daemon. It
+	// does write the reason to the log, because a failed bootstrap is where the reason matters
+	// most: reportRefusal creates the state directory and the log on a machine that has neither.
 	if reason := unusableConfig(loaded); reason != "" {
 		fmt.Fprintf(stderr, "%s: %s\n", appName, reason)
+		reportRefusal(reason)
 		return 1
 	}
 
@@ -113,6 +115,16 @@ func unusableConfig(loaded config.Loaded) string {
 	return ""
 }
 
+// reportRefusal is best effort by design: the reason is already on stderr, and the log line only
+// makes it visible to `smd log`, which is where a user looks when a daemon looks dead.
+func reportRefusal(reason string) {
+	stateDir, err := platform.StateDir()
+	if err != nil {
+		return
+	}
+	daemon.Refused(stateDir, reason)
+}
+
 // runDaemon takes the lock, builds the logger, logs the startup line, runs one pass, and only
 // then starts the watcher. The startup pass therefore happens before the watcher exists and
 // cannot be overtaken by an event it would duplicate.
@@ -172,6 +184,7 @@ func runDaemon(loaded config.Loaded, stateDir string, stdout, stderr io.Writer) 
 		Logger:    logger,
 		Pass:      pass,
 	}
+	daemon.Serving(logger)
 	loop.Run()
 
 	// The shutdown line comes after the watcher is closed and the loop has returned, so it
@@ -188,7 +201,6 @@ var daemonSignals = func() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-// logPathOf is the file the sink opens, as the startup line names it.
 func logPathOf(stateDir string) string {
 	return filepath.Join(stateDir, platform.LogFileName)
 }

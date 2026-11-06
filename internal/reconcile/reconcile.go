@@ -114,7 +114,6 @@ func Pass(cfg config.Config, opts Options) (Summary, []Plan, error) {
 	return summary, plans, nil
 }
 
-// reconcileFile records the outcome in the summary and the plan list.
 func reconcileFile(path string, opts Options, summary *Summary, plans *[]Plan) {
 	logger := opts.logger()
 

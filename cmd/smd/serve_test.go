@@ -14,6 +14,7 @@ import (
 
 	"github.com/yantonov/skill-model-deactivator/internal/config"
 	"github.com/yantonov/skill-model-deactivator/internal/display"
+	"github.com/yantonov/skill-model-deactivator/internal/platform"
 	"github.com/yantonov/skill-model-deactivator/internal/reconcile"
 )
 
@@ -183,16 +184,19 @@ func TestServeRunsTheStartupPassBeforeTheWatcher(t *testing.T) {
 	}
 	// The startup line and the pass lines come from the pass at startup, not from an event.
 	for _, want := range []string{"INFO  config=~/.skill-model-deactivator.json",
-		"reconcile started", "reconcile finished"} {
+		"reconcile started", "reconcile finished", "serving"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout does not contain %q:\n%s", want, stdout)
 		}
 	}
 	// The startup pass finished before the watcher existed, so no watcher event can come before
-	// its summary line.
+	// its summary line, and the serving line cannot come before the pass either.
 	finished := strings.Index(stdout, "reconcile finished")
 	if event := strings.Index(stdout, "watcher event"); event >= 0 && event < finished {
 		t.Errorf("a watcher event was logged before the startup pass finished:\n%s", stdout)
+	}
+	if serving := strings.Index(stdout, "serving"); serving < finished {
+		t.Errorf("the serving line came before the startup pass finished:\n%s", stdout)
 	}
 }
 
@@ -1063,12 +1067,17 @@ func stateDirOf(t *testing.T, home string) string {
 
 func logLinesOf(t *testing.T, home string) []string {
 	t.Helper()
-	path := filepath.Join(stateDirOf(t, home), "smd.log")
+	return linesOf(logTextOf(t, home))
+}
+
+func logTextOf(t *testing.T, home string) string {
+	t.Helper()
+	path := filepath.Join(stateDirOf(t, home), platform.LogFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	return linesOf(string(data))
+	return string(data)
 }
 
 // TestServeWritesEveryLineToStdoutAndTheLogFile: the line reaches stdout and the same line
@@ -1251,8 +1260,8 @@ func TestWatchRootsAreDeduplicated(t *testing.T) {
 	}
 }
 
-// TestServeRefusesAnUnusableConfig: every serve form exits 1 with one stderr line, and a
-// refused run creates no state directory, so it cannot leave a log or a lock behind either.
+// TestServeRefusesAnUnusableConfig: every serve form exits 1 with one stderr line, and the
+// reason reaches the log, so a user who runs `smd log` after a failed bootstrap reads why.
 func TestServeRefusesAnUnusableConfig(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1290,11 +1299,83 @@ func TestServeRefusesAnUnusableConfig(t *testing.T) {
 				if strings.Count(stderr, "\n") != 1 {
 					t.Errorf("stderr = %q, want exactly one line", stderr)
 				}
-				if _, err := os.Stat(stateDirOf(t, home)); !os.IsNotExist(err) {
-					t.Errorf("a refused run created the state directory: %v", err)
+				// The reason is in the log, and no lock was taken: nothing is running.
+				if logged := logTextOf(t, home); !strings.Contains(logged, "refused to start") {
+					t.Errorf("the log is missing the refusal:\n%s", logged)
+				}
+				if _, err := os.Stat(filepath.Join(stateDirOf(t, home), platform.LockFileName)); !os.IsNotExist(err) {
+					t.Errorf("a refused run took a lock: %v", err)
 				}
 			})
 		}
+	}
+}
+
+// TestServeRefusalIsAppendedToTheExistingLog: the line goes after what the previous run wrote, so
+// the history of the log reads in order rather than being replaced.
+func TestServeRefusalIsAppendedToTheExistingLog(t *testing.T) {
+	home := newHome(t)
+	dir := stateDirOf(t, home)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create the state directory: %v", err)
+	}
+	path := filepath.Join(dir, "smd.log")
+	if err := os.WriteFile(path, []byte("the previous run\n"), 0o644); err != nil {
+		t.Fatalf("seed the log: %v", err)
+	}
+	writeConfig(t, home, `{"patterns": []}`)
+
+	stdout, stderr, code := runCLI(t, "serve", "--once")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty: the refusal belongs on stderr and in the file", stdout)
+	}
+	if !strings.Contains(stderr, "patterns is empty") {
+		t.Errorf("stderr = %q, want the reason", stderr)
+	}
+
+	data := string(readBytes(t, path))
+	if !strings.HasPrefix(data, "the previous run\n") {
+		t.Errorf("the refusal lost the previous run's line: %q", data)
+	}
+	last := summaryOf(t, data)
+	if !strings.Contains(last, "ERROR") || !strings.Contains(last, "refused to start") {
+		t.Errorf("the last log line = %q, want an error line recording the refusal", last)
+	}
+	if !strings.Contains(last, "reason=\"patterns is empty: list the files to keep in sync\"") {
+		t.Errorf("the last log line = %q, want it to carry the reason", last)
+	}
+}
+
+// TestServeRefusalCreatesTheLogOnAFreshHome: a bootstrap that fails is the case where the reason
+// matters most, so the first run on a machine creates the log rather than leaving nothing.
+func TestServeRefusalCreatesTheLogOnAFreshHome(t *testing.T) {
+	home := newHome(t)
+	writeConfig(t, home, "not json")
+
+	stdout, stderr, code := runCLI(t, "serve")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty: the refusal belongs on stderr and in the file", stdout)
+	}
+	if !strings.Contains(stderr, "not valid JSON") {
+		t.Errorf("stderr = %q, want the reason", stderr)
+	}
+
+	logged := logTextOf(t, home)
+	if !strings.Contains(logged, "refused to start") {
+		t.Errorf("the created log is missing the refusal:\n%s", logged)
+	}
+	if !strings.Contains(logged, `reason="config is not valid JSON`) {
+		t.Errorf("the created log is missing the reason:\n%s", logged)
+	}
+	// It refused, so nothing took the lock.
+	if _, err := os.Stat(filepath.Join(stateDirOf(t, home), platform.LockFileName)); !os.IsNotExist(err) {
+		t.Errorf("a refused run took a lock: %v", err)
 	}
 }
 

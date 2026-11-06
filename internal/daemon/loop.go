@@ -111,7 +111,6 @@ func NewRescan(interval time.Duration) *Rescan {
 	return r
 }
 
-// C is nil when the rescan is disabled.
 func (r *Rescan) C() <-chan time.Time {
 	if r == nil || r.timer == nil {
 		return nil

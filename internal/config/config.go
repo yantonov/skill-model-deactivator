@@ -17,7 +17,6 @@ import (
 // FileName sits in the home directory, at the same path on all three operating systems.
 const FileName = ".skill-model-deactivator.json"
 
-// The three config keys.
 const (
 	FieldPatterns       = "patterns"
 	FieldDebounce       = "debounce"
@@ -149,7 +148,6 @@ func Create() (string, error) {
 	return path, nil
 }
 
-// Path is the home directory plus FileName.
 func Path() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

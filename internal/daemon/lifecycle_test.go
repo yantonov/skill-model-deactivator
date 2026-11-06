@@ -144,6 +144,92 @@ func TestShutdownIsOneInfoLine(t *testing.T) {
 	}
 }
 
+// TestServingIsOneInfoLine: the one line a reader uses to tell "the startup pass is done and the
+// watcher is live" from "the daemon is still working it out".
+func TestServingIsOneInfoLine(t *testing.T) {
+	logger, dir, stdout := newSink(t)
+
+	Serving(logger)
+
+	if got := strings.Count(stdout.String(), "serving"); got != 1 {
+		t.Errorf("serving mentions = %d, want 1:\n%s", got, stdout.String())
+	}
+	line := strings.SplitN(strings.TrimSuffix(stdout.String(), "\n"), "\n", 2)[0]
+	if !lineStart.MatchString(line) {
+		t.Errorf("line = %q, want the line shape", line)
+	}
+	if !strings.HasSuffix(line, " INFO   serving") {
+		t.Errorf("line = %q, want an info line whose message is serving", line)
+	}
+	if written := logText(t, dir, "smd.log"); written != stdout.String() {
+		t.Errorf("the file holds %q, want the one stdout line %q", written, stdout.String())
+	}
+}
+
+// TestRefusedRecordsTheReasonInTheExistingLog: the line that makes a dead daemon visible. It
+// goes to the file only, because stderr already carried the reason.
+func TestRefusedRecordsTheReasonInTheExistingLog(t *testing.T) {
+	logger, dir, _ := newSink(t)
+	// A previous run is what puts a log file there to append to.
+	logger.Line("info", "startup")
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Close() error = %v, want nil", err)
+	}
+
+	Refused(dir, "patterns is empty: list the files to keep in sync")
+
+	text := logText(t, dir, "smd.log")
+	if !strings.Contains(text, "startup") {
+		t.Errorf("the log lost the previous run's line:\n%s", text)
+	}
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	last := lines[len(lines)-1]
+	if !lineStart.MatchString(last) {
+		t.Fatalf("line = %q, want the line shape", last)
+	}
+	if !strings.Contains(last, " ERROR ") {
+		t.Errorf("line = %q, want level error", last)
+	}
+	for _, want := range []string{" refused to start", `reason="patterns is empty: list the files to keep in sync"`} {
+		if !strings.Contains(last, want) {
+			t.Errorf("line = %q, want it to contain %q", last, want)
+		}
+	}
+}
+
+// TestRefusedQuotesAReasonWithSpaces: the reason is prose, so it is quoted and the line stays
+// splittable on spaces.
+func TestRefusedQuotesAReasonWithSpaces(t *testing.T) {
+	logger, dir, _ := newSink(t)
+	logger.Line("info", "startup")
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Close() error = %v, want nil", err)
+	}
+
+	Refused(dir, `unknown key "paterns": the closest known key is "patterns"`)
+
+	if !strings.Contains(logText(t, dir, "smd.log"),
+		`reason="unknown key \"paterns\": the closest known key is \"patterns\""`) {
+		t.Errorf("the reason was not quoted:\n%s", logText(t, dir, "smd.log"))
+	}
+}
+
+// TestRefusedCreatesTheLogFile: a refused run is often the first run on a machine, so it creates
+// the state directory and the log and leaves the reason there for `smd log`.
+func TestRefusedCreatesTheLogFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "missing", "state")
+
+	Refused(dir, "not valid JSON")
+
+	text := logText(t, dir, "smd.log")
+	if !strings.Contains(text, "refused to start") {
+		t.Errorf("the log is missing the refusal:\n%s", text)
+	}
+	if !strings.Contains(text, `reason="not valid JSON"`) {
+		t.Errorf("the log is missing the reason:\n%s", text)
+	}
+}
+
 // TestNewLoggerOpensTheLogFile: the file exists for `smd log` before the first line is
 // written.
 func TestNewLoggerOpensTheLogFile(t *testing.T) {

@@ -11,7 +11,6 @@ import (
 	"github.com/yantonov/skill-model-deactivator/internal/config"
 )
 
-// wildcardChars make a pattern a glob.
 const wildcardChars = "*?[{"
 
 // staleText ends the message of a stale finding, so a caller can select it.
