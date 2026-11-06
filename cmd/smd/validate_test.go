@@ -41,7 +41,6 @@ func writeTree(t *testing.T, home string, names ...string) {
 	}
 }
 
-// validateHome returns the streams and the exit code.
 func validateHome(t *testing.T, home string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	return runCLI(t, append([]string{"config", "validate"}, args...)...)

@@ -18,7 +18,6 @@ func newHome(t *testing.T) string {
 	return home
 }
 
-// writeFile returns the path it wrote.
 func writeFile(t *testing.T, home, content string) string {
 	t.Helper()
 	path := filepath.Join(home, FileName)

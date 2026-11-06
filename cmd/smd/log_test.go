@@ -23,7 +23,6 @@ func numberedLines(first, n int) []string {
 	return lines
 }
 
-// writeLogFile returns the lines it wrote.
 func writeLogFile(t *testing.T, home, name string, lines []string) []string {
 	t.Helper()
 	dir := stateDirOf(t, home)

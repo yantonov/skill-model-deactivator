@@ -10,7 +10,6 @@ import (
 // writes.
 const stateDirName = "skill-model-deactivator"
 
-// LogFileName is the log file name inside the state directory.
 const LogFileName = "smd.log"
 
 // LockFileName is the same on every platform, and it is never deleted.

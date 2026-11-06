@@ -15,7 +15,6 @@ import (
 	"github.com/yantonov/skill-model-deactivator/internal/platform"
 )
 
-// writeLog returns the state directory it created.
 func writeLog(t *testing.T, name, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -100,7 +99,6 @@ func TestTailWithoutAFile(t *testing.T) {
 	}
 }
 
-// TestTailWithAnEmptyFile: the file exists and holds nothing.
 func TestTailWithAnEmptyFile(t *testing.T) {
 	dir := writeLog(t, platform.LogFileName, "")
 
@@ -149,7 +147,6 @@ func TestAllWithoutTheRotatedFile(t *testing.T) {
 	}
 }
 
-// TestAllWithoutTheCurrentFile: there is nothing to print.
 func TestAllWithoutTheCurrentFile(t *testing.T) {
 	dir := writeLog(t, platform.LogFileName+".1", "old\n")
 
@@ -222,7 +219,6 @@ func TestFollowStartsAfterTheLinesTheCallerPrinted(t *testing.T) {
 	}
 }
 
-// TestFollowWithoutAFile is the absent-file case for the stream.
 func TestFollowWithoutAFile(t *testing.T) {
 	dir := t.TempDir()
 
